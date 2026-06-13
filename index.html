@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Fichaje · Super Ecotodo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, 'Segoe UI', Roboto, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
+    body {
+      background: linear-gradient(160deg, #F7941D 0%, #ED6A1F 45%, #E8590C 100%);
+      min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 22px 16px 40px;
+    }
+    .logo { width: 160px; margin: 0 auto 14px; display: block; filter: drop-shadow(0 4px 12px rgba(0,0,0,.3)); }
+    .card {
+      background: #fff; border-radius: 20px; box-shadow: 0 6px 26px rgba(0,0,0,.28);
+      padding: 24px 22px 28px; width: 100%; max-width: 440px; border-top: 7px solid #E63312;
+    }
+    h1 { font-size: 21px; color: #E63312; text-align: center; font-weight: 800; }
+    .sub { text-align: center; color: #6b7280; font-size: 14px; margin: 3px 0 14px; }
+    .reloj { text-align: center; font-size: 44px; font-weight: 800; color: #1f2937; margin-bottom: 18px; font-variant-numeric: tabular-nums; }
+    label { display: block; font-size: 15px; font-weight: 800; color: #374151; margin: 16px 0 7px; }
+    select, input {
+      width: 100%; padding: 16px; font-size: 18px; border: 2px solid #f3c89b;
+      border-radius: 12px; background: #fff; color: #1f2937;
+    }
+    select:focus, input:focus { outline: none; border-color: #F7941D; }
+    #pin { letter-spacing: 8px; text-align: center; font-size: 24px; }
+
+    /* Botones grandes y MUY separados (apilados, anti dedos grandes) */
+    .botones { margin-top: 26px; display: flex; flex-direction: column; gap: 22px; }
+    button.fichar {
+      width: 100%; padding: 26px 0; font-size: 24px; font-weight: 900; letter-spacing: .5px;
+      border: none; border-radius: 16px; color: #fff; cursor: pointer;
+      box-shadow: 0 5px 0 rgba(0,0,0,.22); display: flex; align-items: center; justify-content: center; gap: 10px;
+    }
+    button.fichar:active { transform: translateY(4px); box-shadow: 0 1px 0 rgba(0,0,0,.22); }
+    button:disabled { opacity: .5; }
+    .entrada { background: #16a34a; }
+    .salida  { background: #dc2626; }
+
+    .pie { color: rgba(255,255,255,.9); font-size: 12px; margin-top: 18px; text-align: center; }
+
+    /* Pantalla de resultado */
+    .overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,.45); display: none;
+      align-items: center; justify-content: center; padding: 24px; z-index: 10;
+    }
+    .overlay.show { display: flex; }
+    .resu {
+      background: #fff; border-radius: 20px; padding: 32px 26px; max-width: 420px; width: 100%;
+      text-align: center; border-top: 9px solid #16a34a;
+    }
+    .resu.err { border-top-color: #dc2626; }
+    .resu .ic { font-size: 60px; }
+    .resu .tx { font-size: 20px; font-weight: 700; color: #1f2937; margin: 14px 0 22px; line-height: 1.4; }
+    .resu button {
+      background: #1f2937; color: #fff; border: none; border-radius: 12px;
+      padding: 16px 30px; font-size: 17px; font-weight: 800; cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+
+  <img src="logo.png" alt="Super Ecotodo" class="logo" onerror="this.style.display='none'">
+
+  <div class="card">
+    <h1>Control de horario</h1>
+    <div class="sub">Fichaje de empleados</div>
+    <div class="reloj" id="reloj">&nbsp;</div>
+
+    <label for="empleado">¿Quién sos?</label>
+    <select id="empleado">
+      <option value="">Cargando lista...</option>
+    </select>
+
+    <label for="pin">Tu PIN</label>
+    <input id="pin" type="tel" inputmode="numeric" maxlength="6" placeholder="••••" autocomplete="off">
+
+    <div class="botones">
+      <button class="fichar entrada" id="btnE" onclick="fichar('ENTRADA')">✅ ENTRADA</button>
+      <button class="fichar salida"  id="btnS" onclick="fichar('SALIDA')">🚪 SALIDA</button>
+    </div>
+  </div>
+
+  <div class="pie">Super Ecotodo · Sistema de fichaje</div>
+
+  <div class="overlay" id="overlay">
+    <div class="resu" id="resu">
+      <div class="ic" id="resuIc">✅</div>
+      <div class="tx" id="resuTx"></div>
+      <button onclick="cerrar()">Aceptar</button>
+    </div>
+  </div>
+
+  <script>
+    // === CONFIG: URL de la API (Google Apps Script) ===
+    var API = "https://script.google.com/macros/s/AKfycbxv2wE_m_owxFvkG8qDDlPniSYzX14TaDA-fKSZ4sNyV_kCLNJs8vZbeVDmgBfbw3Kflg/exec";
+
+    // Reloj
+    function tic() {
+      var d = new Date();
+      document.getElementById('reloj').textContent =
+        ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+    }
+    tic(); setInterval(tic, 5000);
+
+    // Llamada JSONP genérica (funciona en cualquier celular, sin CORS)
+    function jsonp(params, cb) {
+      var name = 'cb_' + Math.random().toString(36).slice(2);
+      var timer = setTimeout(function () {
+        delete window[name];
+        cb({ ok: false, msg: 'No hay conexión. Probá de nuevo.' });
+      }, 12000);
+      window[name] = function (data) {
+        clearTimeout(timer);
+        delete window[name];
+        if (s.parentNode) s.parentNode.removeChild(s);
+        cb(data);
+      };
+      var s = document.createElement('script');
+      s.src = API + '?' + params + '&callback=' + name;
+      s.onerror = function () {
+        clearTimeout(timer);
+        cb({ ok: false, msg: 'No hay conexión. Probá de nuevo.' });
+      };
+      document.body.appendChild(s);
+    }
+
+    // Cargar empleados al abrir
+    jsonp('action=empleados', function (r) {
+      var sel = document.getElementById('empleado');
+      if (r && r.ok && r.empleados && r.empleados.length) {
+        sel.innerHTML = '<option value="">Elegí tu nombre...</option>';
+        r.empleados.forEach(function (n) {
+          var o = document.createElement('option');
+          o.value = n; o.textContent = n;
+          sel.appendChild(o);
+        });
+        var g = null;
+        try { g = localStorage.getItem('fichaje_nombre'); } catch (e) {}
+        if (g) {
+          for (var i = 0; i < sel.options.length; i++) {
+            if (sel.options[i].value === g) { sel.value = g; break; }
+          }
+        }
+      } else {
+        sel.innerHTML = '<option value="">No se pudo cargar — recargá</option>';
+      }
+    });
+
+    var ubic = '';
+    try {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(function (p) {
+          ubic = p.coords.latitude.toFixed(5) + ', ' + p.coords.longitude.toFixed(5);
+        }, function () {}, { timeout: 4000, maximumAge: 60000 });
+      }
+    } catch (e) {}
+
+    function bloquear(b) {
+      document.getElementById('btnE').disabled = b;
+      document.getElementById('btnS').disabled = b;
+    }
+
+    function mostrar(ok, texto) {
+      document.getElementById('resu').className = 'resu' + (ok ? '' : ' err');
+      document.getElementById('resuIc').textContent = ok ? '✅' : '⚠️';
+      document.getElementById('resuTx').textContent = texto;
+      document.getElementById('overlay').className = 'overlay show';
+    }
+    function cerrar() {
+      document.getElementById('overlay').className = 'overlay';
+      if (window._ok) { document.getElementById('pin').value = ''; window._ok = false; }
+    }
+
+    function fichar(tipo) {
+      var nombre = document.getElementById('empleado').value;
+      var pin = document.getElementById('pin').value.trim();
+      if (!nombre) { mostrar(false, 'Elegí tu nombre primero.'); return; }
+      if (!pin)    { mostrar(false, 'Ingresá tu PIN.'); return; }
+
+      bloquear(true);
+      try { localStorage.setItem('fichaje_nombre', nombre); } catch (e) {}
+
+      var q = 'action=fichar'
+        + '&nombre=' + encodeURIComponent(nombre)
+        + '&pin=' + encodeURIComponent(pin)
+        + '&tipo=' + encodeURIComponent(tipo)
+        + '&ubicacion=' + encodeURIComponent(ubic);
+
+      jsonp(q, function (r) {
+        bloquear(false);
+        if (r && r.ok) { window._ok = true; mostrar(true, r.msg); }
+        else { mostrar(false, (r && r.msg) ? r.msg : 'Error. Probá de nuevo.'); }
+      });
+    }
+  </script>
+</body>
+</html>
